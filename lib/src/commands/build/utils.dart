@@ -1,5 +1,5 @@
 import 'dart:convert';
-import 'dart:io' show File, Platform, Process;
+import 'dart:io' show Directory, File, FileMode, Platform, Process;
 
 import 'package:archive/archive.dart';
 import 'package:get_it/get_it.dart';
@@ -46,6 +46,13 @@ class BuildUtils {
     }
   }
 
+  static String _extractedAarDir(String aarPath) {
+    if (p.isWithin(_fs.localDepsDir.path, aarPath)) {
+      return p.join(_fs.buildAarsDir.path, p.basenameWithoutExtension(aarPath));
+    }
+    return p.join(p.dirname(aarPath), p.basenameWithoutExtension(aarPath));
+  }
+
   /// Classpath string separator.
   static String get cpSeparator => Platform.isWindows ? ';' : ':';
 
@@ -90,13 +97,41 @@ class BuildUtils {
   }
 
   static File resourceFromExtractedAar(String aarPath, String resourceName) {
-    final String dist;
-    if (p.isWithin(_fs.localDepsDir.path, aarPath)) {
-      dist = p.join(_fs.buildAarsDir.path, p.basenameWithoutExtension(aarPath));
-    } else {
-      dist = p.join(p.dirname(aarPath), p.basenameWithoutExtension(aarPath));
-    }
+    final dist = _extractedAarDir(aarPath);
     return p.join(dist, resourceName).asFile();
+  }
+
+  static Future<void> copyAarLibsAndRes(Iterable<String> aars) async {
+    for (final aar in aars) {
+      final dist = _extractedAarDir(aar);
+
+      final jniDir = p.join(dist, 'jni').asDir();
+      if (await jniDir.exists()) {
+        final destRoot = p.join(_fs.buildRawDir.path, 'lib').asDir(true);
+        for (final file in jniDir.listSync(recursive: true).whereType<File>()) {
+          final relPath = p.relative(file.path, from: jniDir.path);
+          final dest = p.join(destRoot.path, relPath).asFile(true);
+          await dest.writeAsBytes(await file.readAsBytes());
+        }
+      }
+
+      final resDir = p.join(dist, 'res').asDir();
+      if (await resDir.exists()) {
+        final destRoot = p.join(_fs.buildRawDir.path, 'res').asDir(true);
+        for (final file in resDir.listSync(recursive: true).whereType<File>()) {
+          final relPath = p.relative(file.path, from: resDir.path);
+          final dest = p.join(destRoot.path, relPath).asFile(true);
+          await dest.writeAsBytes(await file.readAsBytes());
+        }
+      }
+
+      final rTxt = p.join(dist, 'R.txt').asFile();
+      if (await rTxt.exists()) {
+        final dest = p.join(_fs.buildRawDir.path, 'R.txt').asFile(true);
+        await dest.writeAsString(await rTxt.readAsString(),
+            mode: FileMode.append);
+      }
+    }
   }
 
   static Future<String> javaHomeDir() async {

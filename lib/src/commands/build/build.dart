@@ -267,6 +267,10 @@ class BuildCommand extends Command<int> {
         .where((el) => el.scope == Scope.compile || el.scope == Scope.runtime);
     final requiredJars =
         requiredDeps.map((el) => el.classesJar).whereNotNull().toSet();
+    final aarPaths = requiredDeps
+        .where((el) => el.packaging == 'aar')
+        .map((el) => el.artifactFile);
+    await BuildUtils.copyAarLibsAndRes(aarPaths);
 
     // Add class files from all required deps into the ART.jar
     if (requiredJars.isNotEmpty) {
